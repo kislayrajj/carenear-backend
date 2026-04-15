@@ -1,56 +1,30 @@
 import mongoose from "mongoose";
-import dotenv from "dotenv";
 import Pharmacy from "../models/Pharmacy.js";
-
+import connectDB from "../config/db.js";
+import dotenv from "dotenv";
 dotenv.config();
+await connectDB();
 
-const pharmacies = [
-  {
-    name: "Apollo Pharmacy",
-    address: "Mumbai",
-    phone: "9876500001",
-    open: true,
-    medicines: [
-      { name: "Paracetamol", available: true },
-      { name: "Aspirin", available: true },
-      { name: "Metformin", available: false },
-    ],
-  },
-  {
-    name: "MedPlus",
-    address: "Delhi",
-    phone: "9876500002",
-    open: true,
-    medicines: [
-      { name: "Paracetamol", available: true },
-      { name: "Insulin", available: true },
-    ],
-  },
-  {
-    name: "HealthCare Pharmacy",
-    address: "Bangalore",
-    phone: "9876500003",
-    open: false,
-    medicines: [
-      { name: "Ibuprofen", available: true },
-      { name: "Amoxicillin", available: true },
-    ],
-  },
-];
+const cities = ["Delhi", "Mumbai", "Pune", "Bangalore", "Hyderabad"];
+const medicines = ["Paracetamol", "Aspirin", "Ibuprofen", "Insulin", "Amoxicillin"];
 
-const seed = async () => {
-  try {
-    await mongoose.connect(process.env.MONGO_URI);
+const pharmacies = [];
 
-    await Pharmacy.deleteMany();
-    await Pharmacy.insertMany(pharmacies);
+for (let i = 1; i <= 60; i++) {
+  pharmacies.push({
+    name: `Pharmacy ${i}`,
+    address: cities[Math.floor(Math.random() * cities.length)],
+    phone: `98765${10000 + i}`,
+    open: Math.random() > 0.2,
+    medicines: medicines.map((m) => ({
+      name: m,
+      available: Math.random() > 0.3,
+    })),
+  });
+}
 
-    console.log("✅ Pharmacies seeded");
-    process.exit();
-  } catch (err) {
-    console.error(err);
-    process.exit(1);
-  }
-};
+await Pharmacy.deleteMany();
+await Pharmacy.insertMany(pharmacies);
 
-seed();
+console.log("🔥 Pharmacies Seeded");
+process.exit();

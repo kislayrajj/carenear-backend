@@ -3,11 +3,17 @@ import Doctor from "../models/Doctor.js";
 // GET all doctors
 export const getDoctors = async (req, res) => {
   try {
-    const { q, specialization, available } = req.query;
+    const {
+      q,
+      specialization,
+      available,
+      page = 1,
+      limit = 10,
+    } = req.query;
 
     let filter = {};
 
-    // search
+    // 🔍 search
     if (q) {
       filter.$or = [
         { name: { $regex: q, $options: "i" } },
@@ -16,7 +22,7 @@ export const getDoctors = async (req, res) => {
       ];
     }
 
-    // specialization filter
+    // specialization
     if (specialization && specialization !== "All") {
       filter.specialization = specialization;
     }
@@ -26,9 +32,24 @@ export const getDoctors = async (req, res) => {
       filter.available = true;
     }
 
-    const doctors = await Doctor.find(filter).sort({ createdAt: -1 });
+    const skip = (page - 1) * limit;
 
-    res.json(doctors);
+    //  total count
+    const total = await Doctor.countDocuments(filter);
+
+    //  paginated data
+    const doctors = await Doctor.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit));
+
+    res.json({
+      page: Number(page),
+      totalPages: Math.ceil(total / limit),
+      total,
+      data: doctors,
+    });
+
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

@@ -3,11 +3,17 @@ import Pharmacy from "../models/Pharmacy.js";
 // GET all pharmacies
 export const getPharmacies = async (req, res) => {
   try {
-    const { q, medicine, open } = req.query;
+    const {
+      q,
+      medicine,
+      open,
+      page = 1,
+      limit = 8,
+    } = req.query;
 
     let filter = {};
 
-    // 🔍 search by name/address
+    // 🔍 search
     if (q) {
       filter.$or = [
         { name: { $regex: q, $options: "i" } },
@@ -15,25 +21,28 @@ export const getPharmacies = async (req, res) => {
       ];
     }
 
-    //  open filter
+    // open filter
     if (open === "true") {
       filter.open = true;
     }
 
+    // 🔥 STEP 1: fetch base data
     let pharmacies = await Pharmacy.find(filter);
 
-    // SMART MEDICINE MATCHING
+    // 🔥 STEP 2: medicine matching + ranking
     if (medicine) {
       const meds = medicine
         .toLowerCase()
         .split(",")
         .map((m) => m.trim())
-        .filter(Boolean); // removes empty like ","
+        .filter(Boolean);
 
       pharmacies = pharmacies
         .map((p) => {
           const matched = p.medicines.filter((m) =>
-            meds.some((med) => m.name.toLowerCase().includes(med)),
+            meds.some((med) =>
+              m.name.toLowerCase().includes(med)
+            )
           );
 
           return {
@@ -41,10 +50,23 @@ export const getPharmacies = async (req, res) => {
             matchCount: matched.length,
           };
         })
-        .filter((p) => p.matchCount > 0); // 🔥 THIS LINE IS CRITICAL
+        .filter((p) => p.matchCount > 0)
+        .sort((a, b) => b.matchCount - a.matchCount); // 🔥 ranking
     }
 
-    res.json(pharmacies);
+    // 🔥 STEP 3: pagination
+    const total = pharmacies.length;
+    const start = (page - 1) * limit;
+    const paginated = pharmacies.slice(start, start + Number(limit));
+
+    // 🔥 RESPONSE
+    res.json({
+      page: Number(page),
+      totalPages: Math.ceil(total / limit),
+      total,
+      data: paginated,
+    });
+
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
