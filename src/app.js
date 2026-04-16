@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import doctorRoutes from "./routes/doctorRoutes.js";
 import pharmacyRoutes from "./routes/pharmacyRoutes.js";
+import analyticsRoutes from "./routes/analyticsRoutes.js";
 
 const app = express();
 
@@ -16,5 +17,6 @@ app.get("/", (req, res) => {
 
 app.use("/api/doctors", doctorRoutes);
 app.use("/api/pharmacies", pharmacyRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
 export default app;

@@ -1,30 +1,82 @@
 import mongoose from "mongoose";
-import Pharmacy from "../models/Pharmacy.js";
-import connectDB from "../config/db.js";
 import dotenv from "dotenv";
+import connectDB from "../config/db.js";
+import Pharmacy from "../models/Pharmacy.js";
+
 dotenv.config();
 await connectDB();
 
-const cities = ["Delhi", "Mumbai", "Pune", "Bangalore", "Hyderabad"];
-const medicines = ["Paracetamol", "Aspirin", "Ibuprofen", "Insulin", "Amoxicillin"];
+// ---------------- DATA POOLS ----------------
 
-const pharmacies = [];
+const cities = ["Delhi","Mumbai","Bangalore","Hyderabad","Chennai","Pune"];
 
-for (let i = 1; i <= 60; i++) {
-  pharmacies.push({
-    name: `Pharmacy ${i}`,
-    address: cities[Math.floor(Math.random() * cities.length)],
-    phone: `98765${10000 + i}`,
+const prefixes = ["Apollo","City","Health","Wellness","Care","Medico","LifeCare"];
+const suffixes = ["Pharmacy","Medicals","Drug Store","Health Hub","Care Center"];
+
+const medicinesList = [
+  "Paracetamol",
+  "Ibuprofen",
+  "Insulin",
+  "Metformin",
+  "Amoxicillin",
+  "Aspirin",
+  "Cetirizine",
+  "Azithromycin",
+  "Pantoprazole"
+];
+
+// ---------------- HELPERS ----------------
+
+const usedNames = new Set();
+
+const generateUniquePharmacyName = (city) => {
+  let name;
+
+  do {
+    const p = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const s = suffixes[Math.floor(Math.random() * suffixes.length)];
+    name = `${p} ${s} ${city}`;
+  } while (usedNames.has(name));
+
+  usedNames.add(name);
+  return name;
+};
+
+const generateMedicines = () => {
+  return medicinesList.map((m) => ({
+    name: m,
+    available: Math.random() > 0.2
+  }));
+};
+
+const generatePharmacy = () => {
+  const city = cities[Math.floor(Math.random() * cities.length)];
+
+  return {
+    name: generateUniquePharmacyName(city),
+    address: city,
+    phone: "9" + Math.floor(100000000 + Math.random() * 900000000),
     open: Math.random() > 0.2,
-    medicines: medicines.map((m) => ({
-      name: m,
-      available: Math.random() > 0.3,
-    })),
-  });
-}
+    medicines: generateMedicines()
+  };
+};
 
-await Pharmacy.deleteMany();
-await Pharmacy.insertMany(pharmacies);
+// ---------------- SEED ----------------
 
-console.log("🔥 Pharmacies Seeded");
-process.exit();
+const seedPharmacies = async () => {
+  try {
+    await Pharmacy.deleteMany();
+
+    const pharmacies = Array.from({ length: 60 }, generatePharmacy);
+
+    await Pharmacy.insertMany(pharmacies);
+
+    console.log("✅ Pharmacies seeded successfully");
+    process.exit();
+  } catch (err) {
+    console.error(err);
+    process.exit(1);
+  }
+};
+
+seedPharmacies();
