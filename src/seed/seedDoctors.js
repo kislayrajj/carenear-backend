@@ -6,7 +6,7 @@ import Doctor from "../models/Doctor.js";
 dotenv.config();
 await connectDB();
 
-// ---------------- DATA POOLS ----------------
+//  DATA POOLS 
 
 const firstNames = [
   "Arjun","Priya","Rohan","Sneha","Amit","Neha","Rahul","Anjali",
@@ -38,7 +38,7 @@ const specializations = [
   "Pediatrician"
 ];
 
-// ---------------- HELPERS ----------------
+//  HELPERS 
 
 const usedNames = new Set();
 
@@ -89,7 +89,7 @@ const generateDoctor = () => {
   };
 };
 
-// ---------------- SEED ----------------
+//  SEED 
 
 const seedDoctors = async () => {
   try {
@@ -99,7 +99,7 @@ const seedDoctors = async () => {
 
     await Doctor.insertMany(doctors);
 
-    console.log("✅ Doctors seeded successfully");
+    console.log(" Doctors seeded successfully");
     process.exit();
   } catch (err) {
     console.error(err);

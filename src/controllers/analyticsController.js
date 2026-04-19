@@ -1,27 +1,27 @@
 import Doctor from "../models/Doctor.js";
 import Pharmacy from "../models/Pharmacy.js";
 
+/* ===================== OVERVIEW ===================== */
 export const getOverview = async (req, res) => {
   try {
     const totalDoctors = await Doctor.countDocuments();
     const totalPharmacies = await Pharmacy.countDocuments();
+
     const availableDoctors = await Doctor.countDocuments({ available: true });
     const openPharmacies = await Pharmacy.countDocuments({ open: true });
 
     const avgFeeResult = await Doctor.aggregate([
-      {
-        $match: { available: true }
-      },
+      { $match: { available: true } },
       {
         $group: {
           _id: null,
-          avgFee: { $avg: "$fee" }
-        }
-      }
+          avgFee: { $avg: "$fee" },
+        },
+      },
     ]);
 
     const avgFee = avgFeeResult[0]?.avgFee || 0;
-    const availabilityRate = totalDoctors > 0 ? ((availableDoctors / totalDoctors) * 100).toFixed(1) : 0;
+
     const estimatedRevenue = availableDoctors * avgFee;
 
     res.json({
@@ -29,35 +29,41 @@ export const getOverview = async (req, res) => {
       totalPharmacies,
       availableDoctors,
       openPharmacies,
-      availabilityRate: parseFloat(availabilityRate),
-      estimatedRevenue
+      availabilityRate:
+        totalDoctors > 0
+          ? Number(((availableDoctors / totalDoctors) * 100).toFixed(1))
+          : 0,
+      estimatedRevenue,
     });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
+/* ===================== DOCTORS ANALYTICS ===================== */
 export const getDoctorsAnalytics = async (req, res) => {
   try {
+    // specialization
     const bySpecialization = await Doctor.aggregate([
       {
         $group: {
           _id: "$specialization",
           count: { $sum: 1 },
+          avgFee: { $avg: "$fee" },
         },
       },
       {
         $project: {
           name: "$_id",
           count: 1,
+          avgFee: { $round: ["$avgFee", 0] },
           _id: 0,
         },
       },
-      {
-        $sort: { count: -1 },
-      },
+      { $sort: { count: -1 } },
     ]);
 
+    // city
     const byCity = await Doctor.aggregate([
       {
         $group: {
@@ -72,41 +78,18 @@ export const getDoctorsAnalytics = async (req, res) => {
           _id: 0,
         },
       },
-      {
-        $sort: { count: -1 },
-      },
-      {
-        $limit: 10,
-      },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
     ]);
 
-    const avgFeeResult = await Doctor.aggregate([
-      {
-        $group: {
-          _id: null,
-          avgFee: { $avg: "$fee" },
-        },
-      },
-    ]);
-
-    const avgRatingResult = await Doctor.aggregate([
-      {
-        $group: {
-          _id: null,
-          avgRating: { $avg: "$rating" },
-        },
-      },
-    ]);
-
+    // experience buckets
     const experienceDistribution = await Doctor.aggregate([
       {
         $bucket: {
           groupBy: "$experience",
           boundaries: [0, 5, 10, 15, 100],
-          default: "Unknown",
-          output: {
-            count: { $sum: 1 },
-          },
+          default: "Other",
+          output: { count: { $sum: 1 } },
         },
       },
       {
@@ -119,7 +102,7 @@ export const getDoctorsAnalytics = async (req, res) => {
                 { case: { $eq: ["$_id", 10] }, then: "10-15" },
                 { case: { $eq: ["$_id", 15] }, then: "15+" },
               ],
-              default: "Unknown",
+              default: "Other",
             },
           },
           count: 1,
@@ -128,24 +111,98 @@ export const getDoctorsAnalytics = async (req, res) => {
       },
     ]);
 
-    const topDoctors = await Doctor.find()
-      .sort({ rating: -1 })
-      .limit(5)
-      .select("name specialization rating fee");
+    // 🔥 NEW: growth (monthly)
+    const growth = await Doctor.aggregate([
+      {
+        $group: {
+          _id: { $month: "$createdAt" },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { "_id": 1 } },
+    ]);
+
+    // 🔥 NEW: demand score
+    const topDoctors = await Doctor.aggregate([
+      {
+        $project: {
+          name: 1,
+          specialization: 1,
+          rating: 1,
+          fee: 1,
+          demandScore: {
+            $multiply: ["$rating", "$reviewCount"],
+          },
+        },
+      },
+      { $sort: { demandScore: -1 } },
+      { $limit: 5 },
+    ]);
+
+    // 🔥 NEW: gap analysis
+    const gapAnalysis = await Doctor.aggregate([
+      {
+        $group: {
+          _id: "$specialization",
+          total: { $sum: 1 },
+          available: {
+            $sum: { $cond: ["$available", 1, 0] },
+          },
+        },
+      },
+      {
+        $project: {
+          specialization: "$_id",
+          shortage: { $subtract: ["$total", "$available"] },
+          _id: 0,
+        },
+      },
+      { $sort: { shortage: -1 } },
+    ]);
+    // 🔥 Demand vs Supply
+const demandVsSupply = await Doctor.aggregate([
+  {
+    $group: {
+      _id: "$specialization",
+      totalDoctors: { $sum: 1 },
+      availableDoctors: {
+        $sum: { $cond: ["$available", 1, 0] },
+      },
+      avgRating: { $avg: "$rating" },
+      totalReviews: { $sum: "$reviewCount" },
+    },
+  },
+  {
+    $project: {
+      specialization: "$_id",
+      supply: "$availableDoctors",
+      demandScore: {
+        $multiply: ["$avgRating", "$totalReviews"],
+      },
+      shortage: {
+        $subtract: ["$totalDoctors", "$availableDoctors"],
+      },
+      _id: 0,
+    },
+  },
+  { $sort: { shortage: -1 } },
+]);
 
     res.json({
       bySpecialization,
       byCity,
-      avgFee: Math.round(avgFeeResult[0]?.avgFee || 0),
-      avgRating: (avgRatingResult[0]?.avgRating || 0).toFixed(1),
-      topDoctors,
       experienceDistribution,
+      growth,
+      topDoctors,
+      gapAnalysis,
+      demandVsSupply
     });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
+/* ===================== PHARMACY ===================== */
 export const getPharmaciesAnalytics = async (req, res) => {
   try {
     const openVsClosed = await Pharmacy.aggregate([
@@ -157,8 +214,8 @@ export const getPharmaciesAnalytics = async (req, res) => {
       },
     ]);
 
-    const openCount = openVsClosed.find((item) => item._id === true)?.count || 0;
-    const closedCount = openVsClosed.find((item) => item._id === false)?.count || 0;
+    const open = openVsClosed.find((i) => i._id === true)?.count || 0;
+    const closed = openVsClosed.find((i) => i._id === false)?.count || 0;
 
     const byCity = await Pharmacy.aggregate([
       {
@@ -174,12 +231,33 @@ export const getPharmaciesAnalytics = async (req, res) => {
           _id: 0,
         },
       },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+    ]);
+
+    // 🔥 NEW: medicine availability ratio
+    const topPharmacies = await Pharmacy.aggregate([
       {
-        $sort: { count: -1 },
+        $project: {
+          name: 1,
+          address: 1,
+          availabilityRate: {
+            $divide: [
+              {
+                $size: {
+                  $filter: {
+                    input: "$medicines",
+                    cond: { $eq: ["$$this.available", true] },
+                  },
+                },
+              },
+              { $size: "$medicines" },
+            ],
+          },
+        },
       },
-      {
-        $limit: 10,
-      },
+      { $sort: { availabilityRate: -1 } },
+      { $limit: 5 },
     ]);
 
     const topMedicines = await Pharmacy.aggregate([
@@ -197,57 +275,25 @@ export const getPharmaciesAnalytics = async (req, res) => {
           _id: 0,
         },
       },
-      {
-        $sort: { count: -1 },
-      },
+      { $sort: { count: -1 } },
       { $limit: 10 },
     ]);
 
-    const topPharmacies = await Pharmacy.aggregate([
-      {
-        $project: {
-          name: 1,
-          address: 1,
-          open: 1,
-          availableCount: {
-            $size: {
-              $filter: {
-                input: "$medicines",
-                as: "med",
-                cond: { $eq: ["$$med.available", true] },
-              },
-            },
-          },
-        },
-      },
-      {
-        $sort: { availableCount: -1 },
-      },
-      { $limit: 5 },
-    ]);
-
     res.json({
-      openVsClosed: {
-        open: openCount,
-        closed: closedCount,
-      },
+      openVsClosed: { open, closed },
       byCity,
       topMedicines,
       topPharmacies,
     });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
+/* ===================== INSIGHTS ===================== */
 export const getInsights = async (req, res) => {
   try {
     const insights = [];
-
-    const totalDoctors = await Doctor.countDocuments();
-    const totalPharmacies = await Pharmacy.countDocuments();
-    const openPharmacies = await Pharmacy.countDocuments({ open: true });
-    const availableDoctors = await Doctor.countDocuments({ available: true });
 
     const topCity = await Doctor.aggregate([
       { $group: { _id: "$address", count: { $sum: 1 } } },
@@ -255,53 +301,40 @@ export const getInsights = async (req, res) => {
       { $limit: 1 },
     ]);
 
-    const topSpecialization = await Doctor.aggregate([
-      { $group: { _id: "$specialization", count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
+    const gap = await Doctor.aggregate([
+      {
+        $group: {
+          _id: "$specialization",
+          total: { $sum: 1 },
+          available: {
+            $sum: { $cond: ["$available", 1, 0] },
+          },
+        },
+      },
+      {
+        $project: {
+          specialization: "$_id",
+          shortage: { $subtract: ["$total", "$available"] },
+        },
+      },
+      { $sort: { shortage: -1 } },
       { $limit: 1 },
     ]);
 
-    const avgFeeResult = await Doctor.aggregate([
-      { $group: { _id: null, avgFee: { $avg: "$fee" } } },
-    ]);
+    if (topCity[0])
+      insights.push(
+        `${topCity[0]._id} has highest doctor concentration (${topCity[0].count})`
+      );
 
-    const avgFee = Math.round(avgFeeResult[0]?.avgFee || 0);
+    if (gap[0])
+      insights.push(
+        `${gap[0].specialization} shows highest shortage (${gap[0].shortage})`
+      );
 
-    if (totalDoctors > 0 && topCity[0]?._id) {
-      insights.push(`${topCity[0]._id} has the highest number of doctors (${topCity[0].count})`);
-    }
+    insights.push("Platform shows uneven healthcare distribution");
 
-    if (topSpecialization[0]?._id) {
-      insights.push(`${topSpecialization[0]._id}s dominate the system`);
-    }
-
-    if (avgFee > 0) {
-      insights.push(`Average consultation fee is ₹${avgFee}`);
-    }
-
-    if (totalPharmacies > 0) {
-      const openPercentage = Math.round((openPharmacies / totalPharmacies) * 100);
-      insights.push(`${openPercentage}% pharmacies are currently open`);
-    }
-
-    if (totalDoctors > 0 && availableDoctors > 0) {
-      const availablePercentage = Math.round((availableDoctors / totalDoctors) * 100);
-      insights.push(`${availablePercentage}% doctors are available for appointments`);
-    }
-
-    if (insights.length < 4) {
-      if (totalDoctors > 0) {
-        insights.push(`Total ${totalDoctors} doctors registered in the system`);
-      }
-      if (totalPharmacies > 0) {
-        insights.push(`${totalPharmacies} pharmacies available for medicines`);
-      }
-    }
-
-    res.json({
-      insights: insights.slice(0, 6),
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.json({ insights });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };

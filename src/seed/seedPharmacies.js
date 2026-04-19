@@ -6,7 +6,7 @@ import Pharmacy from "../models/Pharmacy.js";
 dotenv.config();
 await connectDB();
 
-// ---------------- DATA POOLS ----------------
+//  DATA POOLS 
 
 const cities = ["Delhi","Mumbai","Bangalore","Hyderabad","Chennai","Pune"];
 
@@ -25,7 +25,7 @@ const medicinesList = [
   "Pantoprazole"
 ];
 
-// ---------------- HELPERS ----------------
+//  HELPERS 
 
 const usedNames = new Set();
 
@@ -61,7 +61,7 @@ const generatePharmacy = () => {
   };
 };
 
-// ---------------- SEED ----------------
+//  SEED 
 
 const seedPharmacies = async () => {
   try {
@@ -71,7 +71,7 @@ const seedPharmacies = async () => {
 
     await Pharmacy.insertMany(pharmacies);
 
-    console.log("✅ Pharmacies seeded successfully");
+    console.log(" Pharmacies seeded successfully");
     process.exit();
   } catch (err) {
     console.error(err);

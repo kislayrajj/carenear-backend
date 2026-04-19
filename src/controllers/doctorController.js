@@ -1,12 +1,12 @@
 import Doctor from "../models/Doctor.js";
 
-// GET all doctors
 export const getDoctors = async (req, res) => {
   try {
     const {
       q,
       specialization,
       available,
+      location, // 🔥 NEW
       page = 1,
       limit = 10,
     } = req.query;
@@ -24,7 +24,7 @@ export const getDoctors = async (req, res) => {
 
     // specialization
     if (specialization && specialization !== "All") {
-      filter.specialization = specialization;
+      filter.specialization = { $regex: specialization, $options: "i" };
     }
 
     // availability
@@ -32,12 +32,18 @@ export const getDoctors = async (req, res) => {
       filter.available = true;
     }
 
+    // 🔥 FIX: location support
+    if (req.query.location) {
+      filter.address = {
+        $regex: req.query.location,
+        $options: "i",
+      };
+    }
+
     const skip = (page - 1) * limit;
 
-    //  total count
     const total = await Doctor.countDocuments(filter);
 
-    //  paginated data
     const doctors = await Doctor.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -49,12 +55,10 @@ export const getDoctors = async (req, res) => {
       total,
       data: doctors,
     });
-
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
-
 // GET doctor by ID
 export const getDoctorById = async (req, res) => {
   try {
